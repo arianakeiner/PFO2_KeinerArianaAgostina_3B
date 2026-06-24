@@ -1,6 +1,11 @@
 import requests
+import socket
+import json
 
 BASE_URL = "http://127.0.0.1:5000"
+
+SOCKET_HOST = "127.0.0.1"
+SOCKET_PORT = 6000
 
 
 def mostrar_respuesta(response):
@@ -8,6 +13,32 @@ def mostrar_respuesta(response):
         print(response.json())
     except Exception:
         print(response.text)
+
+
+def mostrar_datos(datos):
+    print(json.dumps(datos, indent=4, ensure_ascii=False))
+
+
+def enviar_por_socket(datos):
+    """
+    Envía una tarea al servidor por socket TCP y recibe el resultado.
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as cliente:
+        cliente.settimeout(5)
+        cliente.connect((SOCKET_HOST, SOCKET_PORT))
+
+        mensaje = json.dumps(datos, ensure_ascii=False) + "\n"
+        cliente.sendall(mensaje.encode("utf-8"))
+
+        respuesta = b""
+
+        while not respuesta.endswith(b"\n"):
+            parte = cliente.recv(4096)
+            if not parte:
+                break
+            respuesta += parte
+
+    return json.loads(respuesta.decode("utf-8").strip())
 
 
 def registrar_usuario():
@@ -42,18 +73,21 @@ def ver_bienvenida():
 
 
 def listar_tareas(usuario_id):
-    response = requests.get(f"{BASE_URL}/tareas/{usuario_id}", timeout=5)
-    mostrar_respuesta(response)
+    respuesta = enviar_por_socket({
+        "accion": "listar",
+        "usuario_id": usuario_id,
+    })
+    mostrar_datos(respuesta)
 
 
 def crear_tarea(usuario_id):
     titulo = input("Título de la tarea: ").strip()
-    response = requests.post(
-        f"{BASE_URL}/tareas",
-        json={"usuario_id": usuario_id, "titulo": titulo},
-        timeout=5,
-    )
-    mostrar_respuesta(response)
+    respuesta = enviar_por_socket({
+        "accion": "crear",
+        "usuario_id": usuario_id,
+        "titulo": titulo,
+    })
+    mostrar_datos(respuesta)
 
 
 def eliminar_tarea():
@@ -63,8 +97,11 @@ def eliminar_tarea():
         print("Debe ingresar un número válido.")
         return
 
-    response = requests.delete(f"{BASE_URL}/tareas/{tarea_id}", timeout=5)
-    mostrar_respuesta(response)
+    respuesta = enviar_por_socket({
+        "accion": "eliminar",
+        "tarea_id": tarea_id,
+    })
+    mostrar_datos(respuesta)
 
 
 def menu_tareas(usuario_id):
@@ -114,6 +151,12 @@ def main():
             print("No se pudo conectar al servidor. Iniciá servidor.py primero.")
         except requests.Timeout:
             print("La solicitud tardó demasiado tiempo.")
+        except socket.timeout:
+            print("La conexión por socket tardó demasiado tiempo.")
+        except ConnectionRefusedError:
+            print("No se pudo conectar al servidor. Iniciá servidor.py primero.")
+        except json.JSONDecodeError:
+            print("El servidor devolvió una respuesta inválida.")
 
 
 if __name__ == "__main__":
